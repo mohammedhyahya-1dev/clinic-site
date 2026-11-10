@@ -1,5 +1,5 @@
-import api from './data.js';
-import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js';
+import api from './data.js?v=2';
+import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js?v=2';
 
 /* ---------- basics ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -217,7 +217,8 @@ function openAppt(a = {}, after) {
 async function renderToday() {
   shell('today', `<div class="boot">${t('loading')}</div>`);
   const d = todayStr();
-  const [appts, pays] = await Promise.all([apptsBetween(d, d), api.list('payments', [['date', '==', d]])]);
+  const [appts, pays, reqs] = await Promise.all([apptsBetween(d, d), api.list('payments', [['date', '==', d]]), api.list('requests', [['status', '==', 'new']])]);
+  reqs.sort((a, b) => ((a.date || '') + (a.time || '')).localeCompare((b.date || '') + (b.time || '')));
   await loadPatients();
   const newToday = S.patients.filter(p => p.createdAt && ymd(new Date(p.createdAt)) === d).length;
   const inc = { IQD: 0, USD: 0 }; pays.forEach(p => inc[p.cur || 'IQD'] += Number(p.amount) || 0);
@@ -242,6 +243,13 @@ async function renderToday() {
       <div class="stat"><div class="n">${newToday}</div><div class="l">${t('newPatientsToday')}</div></div>
       <div class="stat"><div class="n ltr" style="font-size:18px">${money(inc.IQD, 'IQD')}<br>${money(inc.USD, 'USD')}</div><div class="l">${t('incomeToday')}</div></div>
     </div>
+    ${reqs.length ? `<div class="card" style="margin-bottom:16px;border-color:#f79009;background:#fffcf5"><h3>📥 ${t('onlineReqs')} <span class="pill arrived">${reqs.length}</span></h3>
+      <table><tbody>${reqs.map(r => `<tr>
+        <td><b>${esc(r.name)}</b><div class="muted ltr" style="font-size:12px">${esc(r.phone || '')}</div></td>
+        <td>${r.date ? esc(fmtDate(r.date)) : ''} <span class="ltr">${esc(r.time || '')}</span><div class="muted" style="font-size:12px">${esc(r.text || '')}</div></td>
+        <td><span class="pill">${esc(r.source || '')}</span></td>
+        <td><div class="row"><button class="btn sm primary" data-acc="${esc(r.id)}">${t('accept')}</button><button class="btn sm danger" data-rej="${esc(r.id)}">${t('dismiss')}</button></div></td>
+      </tr>`).join('')}</tbody></table></div>` : ''}
     <div class="card"><h3>${t('todayAppts')}</h3>
       ${appts.length ? `<table><thead><tr><th>${t('time')}</th><th>${t('patient')}</th><th>${t('status')}</th><th class="hide-m"></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty">${t('noAppts')}</div>`}
     </div>`;
@@ -249,6 +257,24 @@ async function renderToday() {
   $('#np').onclick = () => openPatient({}, id => location.hash = '#/patient/' + id);
   $$('[data-st]').forEach(b => b.onclick = () => guard(async () => { await api.set('appointments', b.dataset.id, { status: b.dataset.st }); renderToday(); }));
   $$('[data-edit]').forEach(b => b.onclick = () => openAppt(appts.find(a => a.id === b.dataset.edit), renderToday));
+  $$('[data-rej]').forEach(b => b.onclick = () => guard(async () => {
+    if (!confirm(t('confirmDel'))) return;
+    await api.set('requests', b.dataset.rej, { status: 'dismissed' }); renderToday();
+  }));
+  $$('[data-acc]').forEach(b => b.onclick = () => guard(async () => {
+    const r = reqs.find(x => x.id === b.dataset.acc);
+    const digits = s => String(s || '').replace(/\D/g, '').slice(-9);
+    let p = r.phone && S.patients.find(x => digits(x.phone) && digits(x.phone) === digits(r.phone));
+    if (!p) {
+      const id = await api.add('patients', { name: r.name, phone: r.phone || '', medical: {}, notes: (r.source ? r.source + ': ' : '') + (r.text || '') });
+      await loadPatients(); p = patientById(id);
+    }
+    const okDate = /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : d;
+    const okTime = /^\d{2}:\d{2}$/.test(r.time || '') ? r.time : '16:00';
+    openAppt({ patientId: p.id, date: okDate, time: okTime, procedure: procName(S.settings.procedures[0]), notes: r.text || '', fromRequest: r.id }, async () => {
+      await api.set('requests', r.id, { status: 'accepted', patientId: p.id }); renderToday();
+    });
+  }));
 }
 
 /* ---------- APPOINTMENTS ---------- */

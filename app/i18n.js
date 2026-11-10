@@ -27,6 +27,7 @@ export const L = {
     loggedAs: 'مسجل باسم', demo: 'وضع تجريبي — البيانات محفوظة بهذا المتصفح فقط', loading: 'جاري التحميل…',
     required: 'هذا الحقل مطلوب', all: 'الكل', print: 'طباعة', patientsCount: 'عدد المرضى', apptsCount: 'مواعيد',
     open: 'فتح', book: 'حجز موعد', receipt: 'وصل', iqd: 'دينار', usd: 'دولار', exchange: 'سعر الصرف (دينار لكل دولار)',
+    onlineReqs: 'طلبات حجز أونلاين (انستغرام/واتساب)', accept: 'قبول وحجز', dismiss: 'رفض',
     upcoming: 'القادمة', past: 'السابقة', sinceDate: 'منذ', none: '—',
   },
   en: {
@@ -57,6 +58,7 @@ export const L = {
     loggedAs: 'Signed in as', demo: 'Demo mode — data is saved in this browser only', loading: 'Loading…',
     required: 'Required', all: 'All', print: 'Print', patientsCount: 'Patients', apptsCount: 'Appointments',
     open: 'Open', book: 'Book', receipt: 'Receipt', iqd: 'IQD', usd: 'USD', exchange: 'Exchange rate (IQD per USD)',
+    onlineReqs: 'Online booking requests (Instagram/WhatsApp)', accept: 'Accept & book', dismiss: 'Dismiss',
     upcoming: 'Upcoming', past: 'Past', sinceDate: 'Since', none: '—',
   }
 };

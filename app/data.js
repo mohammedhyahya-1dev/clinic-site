@@ -1,5 +1,5 @@
 // Data layer: Firebase (live) or localStorage (demo mode: ?demo=1)
-import { firebaseConfig, EMAIL_DOMAIN } from './config.js';
+import { firebaseConfig, EMAIL_DOMAIN } from './config.js?v=2';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 const COLS = ['patients', 'appointments', 'treatments', 'payments', 'settings'];
