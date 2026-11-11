@@ -1,5 +1,5 @@
-import api from './data.js?v=3';
-import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js?v=3';
+import api from './data.js?v=4';
+import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js?v=4';
 
 /* ---------- basics ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -139,7 +139,7 @@ async function syncBusy() {
   if (api.demo) return;
   const d = todayStr();
   const [appts, reqs, busy] = await Promise.all([
-    api.list('appointments', [['date', '>=', d]]), api.list('requests', [['status', '==', 'new']]), api.list('busy', [['date', '>=', d]])]);
+    api.listServer('appointments', [['date', '>=', d]]), api.listServer('requests', [['status', '==', 'new']]), api.listServer('busy', [['date', '>=', d]])]);
   const want = new Map();
   appts.filter(a => a.status !== 'cancelled').forEach(a => slotIds(a.date, a.time, a.duration).forEach(id => want.set(id, 'appt')));
   reqs.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') && /^\d{2}:\d{2}$/.test(r.time || '') && r.date >= d)
@@ -245,7 +245,7 @@ async function renderToday() {
   shell('today', `<div class="boot">${t('loading')}</div>`);
   const d = todayStr();
   const [appts, pays, reqs] = await Promise.all([apptsBetween(d, d), api.list('payments', [['date', '==', d]]), api.list('requests', [['status', '==', 'new']])]);
-  refreshBusy();
+  setTimeout(refreshBusy, 4000);
   reqs.sort((a, b) => ((a.date || '') + (a.time || '')).localeCompare((b.date || '') + (b.time || '')));
   await loadPatients();
   const newToday = S.patients.filter(p => p.createdAt && ymd(new Date(p.createdAt)) === d).length;
@@ -666,5 +666,16 @@ async function route() {
   });
 }
 window.addEventListener('hashchange', route);
+// Newer data arrived from the server after a fast (on-device) answer: redraw quietly,
+// unless the user is in the middle of typing or has a form open.
+let staleTimer = null;
+api.onStale = () => {
+  clearTimeout(staleTimer);
+  staleTimer = setTimeout(() => {
+    const busy = !$('#modal').classList.contains('hidden') || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    if (busy || !S.user) return;
+    S.settings = null; route();
+  }, 400);
+};
 applyLang();
 api.onAuth(u => { S.user = u; if (!u) { S.patients = []; S.settings = null; } route(); });
