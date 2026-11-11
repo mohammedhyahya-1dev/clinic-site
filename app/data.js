@@ -1,5 +1,5 @@
 // Data layer: Firebase (live) or localStorage (demo mode: ?demo=1)
-import { firebaseConfig, EMAIL_DOMAIN } from './config.js?v=2';
+import { firebaseConfig, EMAIL_DOMAIN } from './config.js?v=3';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 const COLS = ['patients', 'appointments', 'treatments', 'payments', 'settings'];
@@ -28,6 +28,7 @@ if (DEMO) {
     async get(col, id) { const d = mem[col][id]; return d ? { id, ...d } : null; },
     async add(col, data) { const id = uid(); mem[col][id] = { ...data, createdAt: Date.now() }; save(); return id; },
     async set(col, id, data) { mem[col][id] = { ...(mem[col][id] || {}), ...data, updatedAt: Date.now() }; save(); },
+    async put(col, id, data) { (mem[col] ||= {})[id] = { ...data }; save(); },
     async del(col, id) { delete mem[col][id]; save(); },
   };
 } else {
@@ -57,6 +58,7 @@ if (DEMO) {
     async get(col, id) { const s = await F.getDoc(F.doc(db, col, id)); return s.exists() ? { id: s.id, ...s.data() } : null; },
     async add(col, data) { const r = await F.addDoc(F.collection(db, col), { ...data, createdAt: Date.now(), by: auth.currentUser?.email || '' }); return r.id; },
     async set(col, id, data) { await F.setDoc(F.doc(db, col, id), { ...data, updatedAt: Date.now(), by: auth.currentUser?.email || '' }, { merge: true }); },
+    async put(col, id, data) { await F.setDoc(F.doc(db, col, id), data); },
     async del(col, id) { await F.deleteDoc(F.doc(db, col, id)); },
   };
 }

@@ -1,5 +1,5 @@
-import api from './data.js?v=2';
-import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js?v=2';
+import api from './data.js?v=3';
+import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js?v=3';
 
 /* ---------- basics ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -124,6 +124,32 @@ function apptCard(a) {
 }
 function statusPill(s) { return `<span class="pill ${esc(s)}">${t(s)}</span>`; }
 
+/* ---------- busy slots (public: date + time only, no patient data) ---------- */
+// Huda reads these to know which 30-minute slots are taken.
+const pad2 = n => String(n).padStart(2, '0');
+function slotIds(date, time, dur) {
+  const [h, m] = String(time).split(':').map(Number);
+  if (!date || isNaN(h) || isNaN(m)) return [];
+  const st = Math.floor((h * 60 + m) / 30) * 30, en = Math.ceil((h * 60 + m + (Number(dur) || 30)) / 30) * 30;
+  const out = []; for (let x = st; x < en; x += 30) out.push(`${date}_${pad2(Math.floor(x / 60))}:${pad2(x % 60)}`);
+  return out;
+}
+let busyRun = null;
+async function syncBusy() {
+  if (api.demo) return;
+  const d = todayStr();
+  const [appts, reqs, busy] = await Promise.all([
+    api.list('appointments', [['date', '>=', d]]), api.list('requests', [['status', '==', 'new']]), api.list('busy', [['date', '>=', d]])]);
+  const want = new Map();
+  appts.filter(a => a.status !== 'cancelled').forEach(a => slotIds(a.date, a.time, a.duration).forEach(id => want.set(id, 'appt')));
+  reqs.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') && /^\d{2}:\d{2}$/.test(r.time || '') && r.date >= d)
+    .forEach(r => slotIds(r.date, r.time, 30).forEach(id => { if (!want.has(id)) want.set(id, 'request'); }));
+  const have = new Map(busy.map(b => [b.id, b.kind]));
+  for (const [id, kind] of want) if (have.get(id) !== kind) await api.put('busy', id, { date: id.slice(0, 10), time: id.slice(11), kind });
+  for (const id of have.keys()) if (!want.has(id)) await api.del('busy', id);
+}
+function refreshBusy() { busyRun = (busyRun || Promise.resolve()).then(syncBusy).catch(e => console.warn('busy sync', e)); }
+
 function patientPicker(selId) {
   const p = selId ? patientById(selId) : null;
   return `
@@ -194,7 +220,7 @@ function openAppt(a = {}, after) {
     $('#aopen') && ($('#aopen').onclick = closeModal);
     $('#adel') && ($('#adel').onclick = () => guard(async () => {
       if (!confirm(t('confirmDel'))) return;
-      await api.del('appointments', a.id); closeModal(); toast(t('deleted')); after && after();
+      await api.del('appointments', a.id); refreshBusy(); closeModal(); toast(t('deleted')); after && after();
     }));
     $('#asave').onclick = () => guard(async () => {
       const p = await pickerValue(box);
@@ -208,6 +234,7 @@ function openAppt(a = {}, after) {
       if (!data.date || !data.time) { $('#aerr').textContent = t('required'); return; }
       $('#asave').disabled = true;
       if (isNew) await api.add('appointments', data); else await api.set('appointments', a.id, data);
+      refreshBusy();
       closeModal(); toast(t('saved')); after && after();
     });
   });
@@ -218,6 +245,7 @@ async function renderToday() {
   shell('today', `<div class="boot">${t('loading')}</div>`);
   const d = todayStr();
   const [appts, pays, reqs] = await Promise.all([apptsBetween(d, d), api.list('payments', [['date', '==', d]]), api.list('requests', [['status', '==', 'new']])]);
+  refreshBusy();
   reqs.sort((a, b) => ((a.date || '') + (a.time || '')).localeCompare((b.date || '') + (b.time || '')));
   await loadPatients();
   const newToday = S.patients.filter(p => p.createdAt && ymd(new Date(p.createdAt)) === d).length;
@@ -255,11 +283,11 @@ async function renderToday() {
     </div>`;
   $('#na').onclick = () => openAppt({ date: d }, renderToday);
   $('#np').onclick = () => openPatient({}, id => location.hash = '#/patient/' + id);
-  $$('[data-st]').forEach(b => b.onclick = () => guard(async () => { await api.set('appointments', b.dataset.id, { status: b.dataset.st }); renderToday(); }));
+  $$('[data-st]').forEach(b => b.onclick = () => guard(async () => { await api.set('appointments', b.dataset.id, { status: b.dataset.st }); refreshBusy(); renderToday(); }));
   $$('[data-edit]').forEach(b => b.onclick = () => openAppt(appts.find(a => a.id === b.dataset.edit), renderToday));
   $$('[data-rej]').forEach(b => b.onclick = () => guard(async () => {
     if (!confirm(t('confirmDel'))) return;
-    await api.set('requests', b.dataset.rej, { status: 'dismissed' }); renderToday();
+    await api.set('requests', b.dataset.rej, { status: 'dismissed' }); refreshBusy(); renderToday();
   }));
   $$('[data-acc]').forEach(b => b.onclick = () => guard(async () => {
     const r = reqs.find(x => x.id === b.dataset.acc);
@@ -272,7 +300,7 @@ async function renderToday() {
     const okDate = /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : d;
     const okTime = /^\d{2}:\d{2}$/.test(r.time || '') ? r.time : '16:00';
     openAppt({ patientId: p.id, date: okDate, time: okTime, procedure: procName(S.settings.procedures[0]), notes: r.text || '', fromRequest: r.id }, async () => {
-      await api.set('requests', r.id, { status: 'accepted', patientId: p.id }); renderToday();
+      await api.set('requests', r.id, { status: 'accepted', patientId: p.id }); refreshBusy(); renderToday();
     });
   }));
 }
