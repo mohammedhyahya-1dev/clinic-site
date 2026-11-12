@@ -1,5 +1,5 @@
-import api from './data.js?v=4';
-import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js?v=4';
+import api from './data.js?v=5';
+import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js?v=5';
 
 /* ---------- basics ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -148,7 +148,27 @@ async function syncBusy() {
   for (const [id, kind] of want) if (have.get(id) !== kind) await api.put('busy', id, { date: id.slice(0, 10), time: id.slice(11), kind });
   for (const id of have.keys()) if (!want.has(id)) await api.del('busy', id);
 }
+/* ---------- patient lookup (public by exact phone only: names, nothing else) ---------- */
+// Huda reads lookup/<9647xxxxxxxxx> to know if a WhatsApp number already belongs to a patient.
+function phoneKey(ph) {
+  let d = String(ph || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('07')) d = '964' + d.slice(1);
+  else if (d.length === 10 && d.startsWith('7')) d = '964' + d;
+  return /^9647\d{9}$/.test(d) ? d : '';
+}
+async function syncLookup() {
+  if (api.demo) return;
+  const pats = await api.listServer('patients');
+  const want = new Map();
+  pats.forEach(p => { const k = phoneKey(p.phone); if (k && p.name) (want.get(k) || want.set(k, []).get(k)).push(p.name.trim()); });
+  const have = new Map((await api.listServer('lookup')).map(l => [l.id, JSON.stringify(l.names || [])]));
+  for (const [k, names] of want) { names.sort(); if (have.get(k) !== JSON.stringify(names)) await api.put('lookup', k, { names }); }
+  for (const k of have.keys()) if (!want.has(k)) await api.del('lookup', k);
+}
 function refreshBusy() { busyRun = (busyRun || Promise.resolve()).then(syncBusy).catch(e => console.warn('busy sync', e)); }
+let lookRun = null;
+function refreshLookup() { lookRun = (lookRun || Promise.resolve()).then(syncLookup).catch(e => console.warn('lookup sync', e)); }
 
 function patientPicker(selId) {
   const p = selId ? patientById(selId) : null;
@@ -245,7 +265,7 @@ async function renderToday() {
   shell('today', `<div class="boot">${t('loading')}</div>`);
   const d = todayStr();
   const [appts, pays, reqs] = await Promise.all([apptsBetween(d, d), api.list('payments', [['date', '==', d]]), api.list('requests', [['status', '==', 'new']])]);
-  setTimeout(refreshBusy, 4000);
+  setTimeout(refreshBusy, 4000); setTimeout(refreshLookup, 6000);
   reqs.sort((a, b) => ((a.date || '') + (a.time || '')).localeCompare((b.date || '') + (b.time || '')));
   await loadPatients();
   const newToday = S.patients.filter(p => p.createdAt && ymd(new Date(p.createdAt)) === d).length;
@@ -300,7 +320,7 @@ async function renderToday() {
     const okDate = /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : d;
     const okTime = /^\d{2}:\d{2}$/.test(r.time || '') ? r.time : '16:00';
     openAppt({ patientId: p.id, date: okDate, time: okTime, procedure: procName(S.settings.procedures[0]), notes: r.text || '', fromRequest: r.id }, async () => {
-      await api.set('requests', r.id, { status: 'accepted', patientId: p.id }); refreshBusy(); renderToday();
+      await api.set('requests', r.id, { status: 'accepted', patientId: p.id }); refreshBusy(); refreshLookup(); renderToday();
     });
   }));
 }
@@ -387,7 +407,7 @@ function openPatient(p = {}, after) {
     $('#pcan').onclick = closeModal;
     $('#pdel') && ($('#pdel').onclick = () => guard(async () => {
       if (!confirm(t('confirmDel') + ' ' + p.name)) return;
-      await api.del('patients', p.id); closeModal(); toast(t('deleted')); location.hash = '#/patients';
+      await api.del('patients', p.id); refreshLookup(); closeModal(); toast(t('deleted')); location.hash = '#/patients';
     }));
     $('#psave').onclick = () => guard(async () => {
       const name = $('#pn').value.trim();
@@ -398,7 +418,7 @@ function openPatient(p = {}, after) {
       $('#psave').disabled = true;
       let id = p.id;
       if (isNew) id = await api.add('patients', data); else await api.set('patients', id, data);
-      await loadPatients(); closeModal(); toast(t('saved')); after && after(id);
+      await loadPatients(); refreshLookup(); closeModal(); toast(t('saved')); after && after(id);
     });
   });
 }
