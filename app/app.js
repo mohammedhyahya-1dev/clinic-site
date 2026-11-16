@@ -1,5 +1,5 @@
-import api from './data.js?v=5';
-import { L, DEFAULT_PROCS, MED_KEYS } from './i18n.js?v=5';
+import api from './data.js?v=6';
+import { L, DEFAULT_PROCS, MED_KEYS, PROCS_VERSION, OLD_DEFAULT_NAMES } from './i18n.js?v=6';
 
 /* ---------- basics ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -48,6 +48,13 @@ async function loadPatients() { S.patients = (await api.list('patients')).sort((
 async function loadSettings() {
   S.settings = (await api.get('settings', 'clinic')) || {};
   if (!S.settings.procedures?.length) S.settings.procedures = DEFAULT_PROCS;
+  else if ((S.settings.procVersion || 1) < PROCS_VERSION) {
+    // One-time update to the new price list; keeps any procedure the clinic added by hand.
+    const custom = S.settings.procedures.filter(p => p.ar && !OLD_DEFAULT_NAMES.includes(p.ar) && !DEFAULT_PROCS.some(d => d.ar === p.ar));
+    S.settings.procedures = [...DEFAULT_PROCS, ...custom];
+    S.settings.procVersion = PROCS_VERSION;
+    try { await api.set('settings', 'clinic', { procedures: S.settings.procedures, procVersion: PROCS_VERSION }); } catch (e) { console.warn(e); }
+  }
   S.settings.startHour ??= 14; S.settings.endHour ??= 23; S.settings.rate ??= 1520;
 }
 const patientById = id => S.patients.find(p => p.id === id);
@@ -482,7 +489,7 @@ async function renderPatient(id, tab = 'overview') {
   if (m.allergyWhat) alerts.push(t('allergy') + ': ' + m.allergyWhat);
   const reload = nt => renderPatient(id, nt || tab);
 
-  const tabs = ['overview', 'chart', 'payments', 'apptsTab'];
+  const tabs = ['overview', 'chart', 'payments', 'files', 'apptsTab'];
   let content = '';
   if (tab === 'overview') {
     content = `<div class="cols">
@@ -513,6 +520,16 @@ async function renderPatient(id, tab = 'overview') {
       ${pay.length ? `<table><thead><tr><th>${t('date')}</th><th>${t('amount')}</th><th>${t('method')}</th><th>${t('notes')}</th><th></th></tr></thead><tbody>
       ${pay.map(x => `<tr><td>${esc(fmtDate(x.date))}</td><td class="ltr"><b>${money(x.amount, x.cur)}</b></td><td>${t(x.method || 'cash')}</td><td>${esc(x.note || '')}</td><td><button class="btn sm" data-rc="${esc(x.id)}">${t('receipt')}</button> <button class="btn sm danger" data-pd="${esc(x.id)}">✕</button></td></tr>`).join('')}
       </tbody></table>` : `<div class="empty">${t('noData')}</div>`}</div>`;
+  } else if (tab === 'files') {
+    const files = (await api.list('files', [['patientId', '==', id]])).sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || 0) - (a.createdAt || 0));
+    S.files = files;
+    content = `<div class="card"><div class="top" style="margin-bottom:8px"><h3 style="margin:0">${t('files')}</h3><button class="btn primary" id="af">+ ${t('addFile')}</button></div>
+      ${files.length ? `<div class="filegrid">${files.map(f => `<div class="filecard">
+          <img src="${esc(f.data)}" alt="" data-fo="${esc(f.id)}" loading="lazy">
+          <div class="filemeta"><span class="pill ${f.kind === 'xray' ? 'planned' : 'done'}">${t(f.kind === 'xray' ? 'xray' : 'photo')}</span> ${esc(fmtDate(f.date))}
+          ${f.note ? `<div class="muted" style="font-size:12px">${esc(f.note)}</div>` : ''}</div>
+          <div class="row" style="gap:6px"><button class="btn sm" data-fo="${esc(f.id)}">${t('openFull')}</button><button class="btn sm danger" data-fd="${esc(f.id)}">✕</button></div>
+        </div>`).join('')}</div>` : `<div class="empty">${t('noData')}</div>`}</div>`;
   } else {
     const td = todayStr();
     const up = ap.filter(a => a.date >= td).reverse(), past = ap.filter(a => a.date < td);
@@ -537,6 +554,62 @@ async function renderPatient(id, tab = 'overview') {
   $$('[data-ap]').forEach(x => x.onclick = () => openAppt(ap.find(a => a.id === x.dataset.ap), () => reload()));
   $$('[data-pd]').forEach(x => x.onclick = () => guard(async () => { if (!confirm(t('confirmDel'))) return; await api.del('payments', x.dataset.pd); toast(t('deleted')); reload(); }));
   $$('[data-rc]').forEach(x => x.onclick = () => printReceipt(p, pay.find(r => r.id === x.dataset.rc), b));
+  $('#af') && ($('#af').onclick = () => openFileUpload(p, () => reload('files')));
+  $$('[data-fo]').forEach(x => x.onclick = () => { const f = (S.files || []).find(r => r.id === x.dataset.fo); if (f) showImage(f); });
+  $$('[data-fd]').forEach(x => x.onclick = () => guard(async () => { if (!confirm(t('confirmDel'))) return; await api.del('files', x.dataset.fd); toast(t('deleted')); reload('files'); }));
+}
+
+/* ---------- photos & X-rays ---------- */
+// Images are shrunk in the browser and saved inside the database (no separate file storage needed).
+// A database record holds at most ~1 MB, so each image is kept under ~700 KB.
+function shrinkImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let max = 1600, q = 0.8, out = '';
+      for (let i = 0; i < 8; i++) {
+        const k = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        out = c.toDataURL('image/jpeg', q);
+        if (out.length < 700000) return resolve(out);
+        if (q > 0.55) q -= 0.1; else max = Math.round(max * 0.8);
+      }
+      reject(new Error(t('fileTooBig')));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(t('fileTooBig'))); };
+    img.src = url;
+  });
+}
+function openFileUpload(p, after) {
+  modal(`<h3>${t('addFile')} — ${esc(p.name)}</h3>
+    <div class="grid2">
+      <div class="field"><label>${t('fileKind')}</label><select id="fk"><option value="photo">${t('photo')}</option><option value="xray">${t('xray')}</option></select></div>
+      <div class="field"><label>${t('date')}</label><input type="date" id="fdt" value="${todayStr()}"></div>
+    </div>
+    <div class="field"><label>${t('notes')}</label><input id="fno"></div>
+    <div class="field"><label>${t('chooseFiles')}</label><input type="file" id="ffi" accept="image/*" multiple></div>
+    <div class="muted" id="fst" style="min-height:18px"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="fcx">${t('cancel')}</button><button class="btn primary" id="fsv">${t('save')}</button></div>`, box => {
+    $('#fcx', box).onclick = closeModal;
+    $('#fsv', box).onclick = () => guard(async () => {
+      const list = [...$('#ffi', box).files]; if (!list.length) return;
+      $('#fsv', box).disabled = true;
+      for (let i = 0; i < list.length; i++) {
+        $('#fst', box).textContent = `${t('uploading')} ${i + 1}/${list.length}`;
+        const data = await shrinkImage(list[i]);
+        await api.add('files', { patientId: p.id, kind: $('#fk', box).value, date: $('#fdt', box).value || todayStr(), note: $('#fno', box).value.trim(), name: list[i].name.slice(0, 120), data });
+      }
+      closeModal(); toast(t('uploaded')); after();
+    }).finally(() => { const b = $('#fsv', box); if (b) b.disabled = false; });
+  });
+}
+function showImage(f) {
+  modal(`<div style="text-align:center"><img src="${esc(f.data)}" alt="" style="max-width:100%;max-height:75vh;border-radius:8px">
+    <div class="muted" style="margin-top:8px">${t(f.kind === 'xray' ? 'xray' : 'photo')} · ${esc(fmtDate(f.date))}${f.note ? ' · ' + esc(f.note) : ''}</div>
+    <div class="row" style="justify-content:center;margin-top:10px"><a class="btn" download="${esc((f.name || 'image').replace(/\.[^.]+$/, ''))}.jpg" href="${esc(f.data)}">⬇</a><button class="btn" id="fcl">${t('cancel')}</button></div></div>`,
+    box => { $('#fcl', box).onclick = closeModal; });
 }
 
 function openTreatment(p, allTr, x = {}, after) {
@@ -660,7 +733,7 @@ async function renderSettings() {
     sync();
     s.procedures = s.procedures.filter(p => p.ar || p.en);
     s.startHour = Number($('#sh').value); s.endHour = Number($('#eh').value); s.rate = Number($('#rt').value) || 1520;
-    await api.set('settings', 'clinic', { procedures: s.procedures, startHour: s.startHour, endHour: s.endHour, rate: s.rate });
+    await api.set('settings', 'clinic', { procedures: s.procedures, procVersion: PROCS_VERSION, startHour: s.startHour, endHour: s.endHour, rate: s.rate });
     toast(t('saved'));
   });
   $('#bk').onclick = () => guard(async () => {
