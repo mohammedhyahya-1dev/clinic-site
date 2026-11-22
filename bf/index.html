@@ -121,7 +121,7 @@ async function draw(data){
   y += 90 + offers.length * 64 + 10;
   roundRect(ctx, 60, y, W - 120, 150, 22); ctx.fillStyle = "#fff4f5"; ctx.fill();
   ctx.fillStyle = "#1d2433"; ctx.font = `500 34px ${FONT}`;
-  const note = "التخفيض ينستخدم مرة وحدة لما تراجعون العيادة، حتى لو اكثر من علاج. راوو هذا الوصل للعيادة من تجون.";
+  const note = "التخفيض يستخدم مرة وحدة لما تراجعون العيادة، حتى لو اكثر من علاج. راوو هذا الوصل للعيادة من تجون.";
   wrap(ctx, note, W - 200).forEach((l, i) => ctx.fillText(l, R - 20, y + 60 + i * 50));
 
   // badges
