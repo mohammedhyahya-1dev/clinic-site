@@ -24,7 +24,11 @@ main{max-width:560px;margin:0 auto;padding:18px 14px 40px}
 .hint{color:var(--muted);font-size:14px;text-align:center;margin-top:12px;line-height:1.7}
 .msg{background:#fff;border-radius:16px;padding:28px 20px;text-align:center;line-height:1.9;box-shadow:0 4px 18px rgba(23,44,73,.08)}
 .msg img{width:220px;max-width:70%;margin-bottom:12px}
-.hidden{display:none}
+.hidden{display:none!important}
+#savehelp{position:fixed;inset:0;background:rgba(15,25,40,.92);z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:16px;overflow:auto}
+#savehelp p{color:#fff;text-align:center;line-height:1.8;font-size:16px;margin:6px 0 12px}
+#savehelp img{width:100%;max-width:480px;border-radius:14px;-webkit-touch-callout:default;user-select:auto}
+#savehelp button{margin-top:14px;max-width:480px;width:100%}
 </style>
 </head>
 <body>
@@ -38,6 +42,11 @@ main{max-width:560px;margin:0 auto;padding:18px 14px 40px}
       <button class="btn ghost" id="share">مشاركة</button>
     </div>
     <p class="hint">يرجى حفظ واظهار الوصل عند الوصول للعيادة.<br>على الآيفون: اضغطوا على الصورة ضغطة مطولة ← "حفظ في الصور".</p>
+  </div>
+  <div id="savehelp" class="hidden">
+    <p><b>اضغطوا على الصورة ضغطة مطولة</b> واختاروا "حفظ في الصور" او "Save image".<br>اذا ما طلعتلكم: افتحوا الرابط بالمتصفح (من النقاط ••• فوق ← "فتح في المتصفح") وجربوا مرة ثانية، او سووا لقطة شاشة للوصل.</p>
+    <img id="savehelp-img" alt="وصل البلاك فرايدي">
+    <button class="btn ghost" id="savehelp-close">رجوع</button>
   </div>
 </main>
 <script>
@@ -176,14 +185,29 @@ async function main(){
   document.getElementById("loading").classList.add("hidden");
   document.getElementById("view").classList.remove("hidden");
   const fname = "wasl-" + data.code + ".jpg";
-  document.getElementById("save").onclick = () => { const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); };
   const shareBtn = document.getElementById("share");
+  const saveBtn = document.getElementById("save");
+  const inApp = /Instagram|FBAN|FBAV|FB_IAB|WhatsApp|Line\//i.test(navigator.userAgent);
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  let file = null;
   canvas.toBlob(blob => {
-    const file = new File([blob], fname, { type: "image/jpeg" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })){
-      shareBtn.onclick = () => navigator.share({ files: [file], title: "وصل البلاك فرايدي" }).catch(() => {});
-    } else shareBtn.classList.add("hidden");
+    file = new File([blob], fname, { type: "image/jpeg" });
+    if (!(navigator.canShare && navigator.canShare({ files: [file] }))) shareBtn.classList.add("hidden");
   }, "image/jpeg", 0.92);
+  const canShareFile = () => file && navigator.canShare && navigator.canShare({ files: [file] });
+  shareBtn.onclick = () => { if (canShareFile()) navigator.share({ files: [file], title: "وصل البلاك فرايدي" }).catch(() => {}); };
+  saveBtn.onclick = () => {
+    // iPhone/iPad: the share sheet has "حفظ الصورة" — works in Safari and most in-app browsers
+    if ((isIOS || inApp) && canShareFile()) { navigator.share({ files: [file] }).catch(() => {}); return; }
+    if (inApp || isIOS) { showSaveHelp(); return; }
+    const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+  };
+  function showSaveHelp(){
+    const ov = document.getElementById("savehelp");
+    document.getElementById("savehelp-img").src = url;
+    ov.classList.remove("hidden");
+  }
+  document.getElementById("savehelp-close").onclick = () => document.getElementById("savehelp").classList.add("hidden");
 }
 
 main().catch(() => {
