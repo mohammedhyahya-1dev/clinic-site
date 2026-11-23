@@ -83,7 +83,7 @@ async function draw(data){
   ctx.strokeStyle = "#e6e9ef"; ctx.lineWidth = 3; ctx.stroke();
   const rows = [
     ["الاسم", data.name],
-    ["رقم الهاتف", data.phone4 ? "•••• " + toAr(data.phone4) : "—"],
+    ["رقم الهاتف", data.phone || "—"],
     ["رقم الوصل", data.code],
     ["تاريخ التسجيل", data.date],
   ];
@@ -93,7 +93,7 @@ async function draw(data){
     ctx.font = `500 36px ${FONT}`; ctx.fillStyle = "#5d6678"; ctx.fillText(k, R - 30, ry);
     ctx.font = `700 42px ${FONT}`; ctx.fillStyle = "#1d2433";
     ctx.textAlign = "left";
-    if (k === "رقم الوصل") ctx.direction = "ltr";
+    if (k === "رقم الوصل" || k === "رقم الهاتف") ctx.direction = "ltr";
     let val = v; while (ctx.measureText(val).width > 560 && val.length > 4) val = val.slice(0, -2) + "…";
     ctx.fillText(val, 110, ry);
     ctx.direction = "rtl"; ctx.textAlign = "right";
@@ -139,6 +139,13 @@ async function draw(data){
   return c;
 }
 
+function fmtPhone(p){
+  let d = String(p).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c)).replace(/\D/g, "");
+  if (d.startsWith("00964")) d = d.slice(5); else if (d.startsWith("964")) d = d.slice(3);
+  if (d.length === 10 && d[0] === "7") d = "0" + d;
+  return d;
+}
+
 function fmtDate(iso){
   const d = new Date(iso);
   try { return d.toLocaleDateString("ar-IQ", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Baghdad" }); }
@@ -150,7 +157,7 @@ async function main(){
   const id = (p.get("r") || "").trim();
   let data;
   if (p.get("demo") === "1"){
-    data = { name: "محمد حسين علي", phone4: "1234", code: "BF-DEMO01", date: fmtDate(new Date().toISOString()) };
+    data = { name: "محمد حسين علي", phone: "07701234567", code: "BF-DEMO01", date: fmtDate(new Date().toISOString()) };
   } else {
     if (!/^[A-Za-z0-9]{6,40}$/.test(id)) throw new Error("bad id");
     const r = await fetch(BASE + id + "?key=" + API_KEY);
@@ -158,7 +165,7 @@ async function main(){
     const doc = await r.json(); const f = doc.fields || {};
     data = {
       name: (f.name && f.name.stringValue || "").trim(),
-      phone4: (f.phone4 && f.phone4.stringValue || "").replace(/\D/g, "").slice(-4),
+      phone: fmtPhone(f.phone && f.phone.stringValue || ""),
       code: "BF-" + id.slice(0, 6).toUpperCase(),
       date: fmtDate(doc.createTime),
     };
