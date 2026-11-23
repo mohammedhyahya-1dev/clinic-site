@@ -37,7 +37,7 @@ main{max-width:560px;margin:0 auto;padding:18px 14px 40px}
       <button class="btn primary" id="save">حفظ الوصل كصورة</button>
       <button class="btn ghost" id="share">مشاركة</button>
     </div>
-    <p class="hint">احتفظوا بهذا الوصل واعرضوه من تجون للعيادة.<br>على الآيفون: اضغطوا على الصورة ضغطة مطولة ← "حفظ في الصور".</p>
+    <p class="hint">يرجى حفظ واظهار الوصل عند الوصول للعيادة.<br>على الآيفون: اضغطوا على الصورة ضغطة مطولة ← "حفظ في الصور".</p>
   </div>
 </main>
 <script>
@@ -74,8 +74,7 @@ async function draw(data){
   ctx.fillStyle = "#1F3A5F"; ctx.fillRect(0, bandY, W, 210);
   ctx.fillStyle = "#FE0013"; ctx.fillRect(0, bandY + 210, W, 10);
   ctx.textAlign = "center"; ctx.fillStyle = "#fff";
-  ctx.font = `700 76px ${FONT}`; ctx.fillText("وصل البلاك فرايدي", W / 2, bandY + 100);
-  ctx.font = `500 40px ${FONT}`; ctx.fillStyle = "#dbe4f0"; ctx.fillText("تخفيض البلاك فرايدي محجوز باسمكم", W / 2, bandY + 165);
+  ctx.font = `700 80px ${FONT}`; ctx.fillText("وصل البلاك فرايدي", W / 2, bandY + 132);
 
   // details card
   let y = bandY + 280;
@@ -103,7 +102,7 @@ async function draw(data){
   // offers
   y += 440;
   ctx.font = `700 44px ${FONT}`; ctx.fillStyle = "#1F3A5F"; ctx.fillText("التخفيضات المشمولة", R, y);
-  ctx.fillStyle = "#FE0013"; ctx.fillRect(R - 120, y + 18, 120, 6);
+  ctx.fillStyle = "#FE0013"; const hw = ctx.measureText("التخفيضات المشمولة").width; ctx.fillRect(R - hw, y + 18, hw, 6);
   const offers = [
     "زراعة الاسنان: لحد ٥٠٪",
     "التقويم الشفاف انفزلاين: لحد ٢٠٪",
@@ -121,8 +120,8 @@ async function draw(data){
   y += 90 + offers.length * 64 + 10;
   roundRect(ctx, 60, y, W - 120, 150, 22); ctx.fillStyle = "#fff4f5"; ctx.fill();
   ctx.fillStyle = "#1d2433"; ctx.font = `500 34px ${FONT}`;
-  const note = "التخفيض يستخدم مرة وحدة لما تراجعون العيادة، حتى لو اكثر من علاج. اعرضوا هذا الوصل من تجون للعيادة.";
-  wrap(ctx, note, W - 200).forEach((l, i) => ctx.fillText(l, R - 20, y + 60 + i * 50));
+  const note = ["التخفيض يستخدم مرة واحدة ولاكثر من علاج.", "يرجى حفظ واظهار الوصل عند الوصول للعيادة."];
+  note.forEach((l, i) => ctx.fillText(l, R - 20, y + 60 + i * 50));
 
   // badges
   y += 185;
